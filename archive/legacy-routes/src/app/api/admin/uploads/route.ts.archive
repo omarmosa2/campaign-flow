@@ -1,0 +1,27 @@
+import { NextResponse } from "next/server";
+import { admin, db } from "@/lib/supabase";
+import { failure, origin, check } from "@/lib/http";
+import { upload } from "@/server/uploads";
+export async function POST(req: Request) {
+  try {
+    origin(req);
+    const user = await admin();
+    if (Number(req.headers.get("content-length")) > 4400000)
+      throw Error("حجم الطلب كبير");
+    const f = (await req.formData()).get("file");
+    if (!(f instanceof File)) throw Error("اختر صورة");
+    const data = await upload(f, "catalog", true);
+    check(
+      await db()
+        .from("audit_logs")
+        .insert({
+          actor: user.id,
+          action: "asset_uploaded",
+          metadata: { path: data.path },
+        }),
+    );
+    return NextResponse.json(data);
+  } catch (e) {
+    return failure(e);
+  }
+}

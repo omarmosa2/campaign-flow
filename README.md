@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# مدار — Campaign Flow
 
-## Getting Started
+تطبيق عربي RTL لإدارة الحملات والخدمات والنماذج والطلبات، مع مراجعة يدوية لشام كاش وصندوق إشعارات WhatsApp Cloud API. مبني بـ Next.js App Router وTypeScript وSupabase، ومهيأ للنشر على Vercel دون خادم دائم.
 
-First, run the development server:
+## التشغيل
 
-```bash
+```powershell
+npm ci
+Copy-Item .env.example .env.local
+# أكمل متغيرات Supabase والأسرار وAPP_URL
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+دون إعداد Supabase تظهر حالة إعداد صريحة، وتبقى الإدارة مغلقة ولا توجد بيانات تجريبية في الإنتاج. يستخدم خط Cairo محلياً من الحزمة، دون اعتماد على Google Fonts أثناء التشغيل أو البناء.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## الوثائق
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- [النشر وإنشاء أول مدير](DEPLOYMENT.md)
+- [قاعدة البيانات والمعاملات](DATABASE.md)
+- [إعداد Meta وواتساب](WHATSAPP_SETUP.md)
+- [الأمان والحدود التشغيلية](SECURITY.md)
+- [التغطية وحالة التحقق](TEST_REPORT.md)
 
-## Learn More
+## الوظائف
 
-To learn more about Next.js, take a look at the following resources:
+- حملات وخدمات: إنشاء، تعديل، إيقاف بحالة مسودة، أرشفة، نسخ، روابط فريدة، صور خاصة، ربط عدة خدمات بالحملة، إحصاءات الطلبات والإيرادات حسب العملة.
+- منشئ نموذج يدعم 12 نوعاً من الحقول، الإلزام والوصف والخيارات والحدود والترتيب والمعاينة. تحفظ نسخة النموذج وإجابات العميل مع الطلب.
+- طلب دون حساب: مراجعة قبل التأكيد، سعر يختاره الخادم، مفتاح منع تكرار، رقم واضح، متابعة بملف ارتباط HttpOnly.
+- شام كاش: تعليمات قابلة للتعديل، رفع إشعار خاص، رفض مع سبب وإعادة رفع، اعتماد يدوي موثق، تاريخ مراجعة واسم المدير وسجل أحداث.
+- إدارة طلبات: بحث وتصفية بالحالة والحملة والخدمة وتاريخ UTC، ترتيب، 20 نتيجة لكل صفحة من قاعدة البيانات، ملاحظات وتصدير CSV حتى 5000 طلب مع BOM وحماية صيغ Excel.
+- WhatsApp: قوالب رسمية، مهام متسقة مع الطلب، أقفال مهام، محاولات محدودة بتأخير متزايد، توقيع Webhook ومنع تكراره، سجل وإعادة معالجة مع تأكيد.
+- Dashboard: إجماليات الطلبات وحالاتها واليوم، إيرادات مؤكدة منفصلة لكل عملة، رسوم آخر 30 يوماً وترتيب الحملات والخدمات.
+- دورا super_admin وadmin؛ صفحة الفريق لمدير النظام، ومنع تعطيل آخر مدير نظام. لا تسجيل إداري عام.
+- تصميم عربي RTL وفاتح/داكن ومتجاوب وحالات تحميل وفشل وفراغ و404.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## الصفحات
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| المسار | الوظيفة |
+| --- | --- |
+| `/` | الحملات والخدمات المنشورة أو حالة الإعداد |
+| `/campaigns/[slug]` | تفاصيل الحملة وطلبها |
+| `/services/[slug]` | طلب خدمة مباشرة |
+| `/track/[uuid]` | متابعة خاصة وتعليمات الدفع ورفع الإشعار |
+| `/privacy` | سياسة استخدام البيانات |
+| `/admin/login` | دخول Supabase Auth |
+| `/admin/dashboard` | الإحصاءات |
+| `/admin/campaigns`, `/admin/services` | القوائم |
+| `/admin/campaigns/new`, `/admin/services/new` | الإنشاء ومنشئ النموذج |
+| `/admin/campaigns/[id]`, `/admin/services/[id]` | التعديل والنشر والأرشفة |
+| `/admin/orders`, `/admin/orders/[id]` | المتابعة ومراجعة الدفع |
+| `/admin/notifications` | مهام الإشعار وإعادة المعالجة |
+| `/admin/settings` | البيانات العامة وشام كاش وMeta |
+| `/admin/team` | إنشاء المديرين وتعطيلهم وتعديل أدوارهم |
 
-## Deploy on Vercel
+## البنية
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```text
+src/app/                 صفحات App Router وRoute Handlers
+src/app/admin/(protected) صفحات محمية عند التخطيط وعند قراءة البيانات
+src/components/          واجهة الإدارة والعميل والنماذج والجداول والرسوم
+src/components/ui/       مكوّن Button بنمط shadcn/ui باستخدام Radix وCVA
+src/lib/                 Zod، Supabase، الصلاحيات، التحقق، CSV وHTTP
+src/server/              رفع الملفات ومعالجة صندوق إشعارات Meta
+src/types/               أنواع الدومين
+supabase/migrations/     SQL فعلي للجداول والدوال وRLS وStorage
+scripts/                 إنشاء أول مدير
+ tests/unit/             قواعد الإدخال وتكامل Meta باستخدام Mock
+ tests/integration/      معاملات SQL على PostgreSQL WASM (PGlite)
+ tests/e2e/              اختبارات عدم الإعداد والحماية والهاتف
+ tests/workflow/         دورة العميل والإدارة باستخدام Supabase محلي بديل
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## الفحوص
+
+```powershell
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npx playwright install chromium
+npm run test:e2e
+npm run test:workflow
+```
+
+اختبارات workflow تستخدم قاعدة PostgreSQL WASM في الذاكرة وبديل HTTP محلياً لـAuth وStorage. لا تثبت عمل مشروع Supabase حقيقي ولا تسليم رسالة Meta؛ يلزم اختبار قبول منفصل بعد توفير المفاتيح. بيانات الاختبار لا تدخل التطبيق أو إنتاجه.
+
+## الاستخدام الأول
+
+1. أنشئ Supabase وطبّق SQL وأضف متغيرات البيئة.
+2. أنشئ أول مدير وفق DEPLOYMENT.md وسجّل دخوله.
+3. من الإعدادات: أدخل صاحب حساب شام كاش ومعرّفه وفعّل استقبال الطلبات.
+4. أنشئ خدمة بسعر 50 وعملة USD وحالة نشطة.
+5. أنشئ حملة واربط الخدمة وأضف حقول نموذجها وانشرها.
+6. انسخ الرابط وجرّب طلباً من هاتف. بعد التحويل الحقيقي ارفع الإشعار.
+7. من الطلبات: راجع وصول الأموال فعلياً، ثم اعتمد الدفع وابدأ التنفيذ وأكمله.
+
+هذا تسليم مصدر قابل للبناء والإعداد. لا يُعد إطلاقاً تجارياً متحققاً قبل اختبار Supabase وMeta والنشر الفعلي وتحديد سياسة الاحتفاظ ببيانات الجهة المشغلة.

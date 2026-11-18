@@ -1,0 +1,59 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { admin, db } from "@/lib/supabase";
+import { origin, failure, check } from "@/lib/http";
+export async function POST(req: Request) {
+  try {
+    origin(req);
+    const actor = await admin(true);
+    const b = z
+      .object({
+        id: z.uuid().optional(),
+        email: z.email().optional(),
+        password: z.string().min(12).max(128).optional(),
+        display_name: z.string().min(2).max(100),
+        role: z.enum(["super_admin", "admin"]),
+        enabled: z.boolean(),
+      })
+      .parse(await req.json());
+    const client = db();
+    if (b.id) {
+      check(
+        await client.rpc("manage_profile", {
+          p_id: b.id,
+          p_name: b.display_name,
+          p_role: b.role,
+          p_enabled: b.enabled,
+          p_actor: actor.id,
+        }),
+      );
+    } else {
+      if (!b.email || !b.password)
+        throw Error("أدخل البريد وكلمة مرور لا تقل عن 12 حرفاً");
+      const { data, error } = await client.auth.admin.createUser({
+        email: b.email,
+        password: b.password,
+        email_confirm: true,
+      });
+      if (error || !data.user)
+        throw Error("تعذر إنشاء الحساب، تحقق من البريد وكلمة المرور");
+      try {
+        check(
+          await client.rpc("manage_profile", {
+            p_id: data.user.id,
+            p_name: b.display_name,
+            p_role: b.role,
+            p_enabled: b.enabled,
+            p_actor: actor.id,
+          }),
+        );
+      } catch (e) {
+        await client.auth.admin.deleteUser(data.user.id);
+        throw e;
+      }
+    }
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return failure(e);
+  }
+}

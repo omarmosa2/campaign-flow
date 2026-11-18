@@ -1,0 +1,48 @@
+import { pageAdmin } from "@/lib/page-auth";
+import { notFound } from "next/navigation";
+import { db } from "@/lib/supabase";
+import { check } from "@/lib/http";
+import { CatalogEditor } from "@/components/catalog-editor";
+import type { Item } from "@/types";
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ kind: string; id: string }>;
+}) {
+  await pageAdmin();
+  const { kind, id } = await params;
+  if (!["campaigns", "services"].includes(kind)) notFound();
+  const services = check(
+    await db()
+      .from("services")
+      .select("id,name")
+      .neq("status", "archived")
+      .limit(500),
+  );
+  const settings = check(
+    await db().from("settings").select("value").eq("id", "main").single(),
+  ).value;
+  let item: Item | undefined;
+  if (id !== "new") {
+    const result = check(
+      await db().from(kind).select("*").eq("id", id).maybeSingle(),
+    );
+    if (!result) notFound();
+    item = result as Item;
+    if (kind === "campaigns")
+      item.service_ids = check(
+        await db()
+          .from("campaign_services")
+          .select("service_id")
+          .eq("campaign_id", id),
+      ).map((s) => s.service_id);
+  }
+  return (
+    <CatalogEditor
+      kind={kind}
+      item={item}
+      services={services}
+      defaultCurrency={settings.currency}
+    />
+  );
+}

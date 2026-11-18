@@ -1,0 +1,41 @@
+import { after } from "next/server";
+import { processOutbox } from "@/server/notifications";
+import { NextResponse } from "next/server";
+import { admin, db } from "@/lib/supabase";
+import { origin, failure, check } from "@/lib/http";
+import { z } from "zod";
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    origin(req);
+    const user = await admin();
+    const id = z.uuid().parse((await params).id);
+    const body = z
+      .object({
+        decision: z.enum(["approved", "rejected"]),
+        reason: z.string().max(2000),
+        reference: z.string().max(150),
+        confirmed: z.literal(true),
+      })
+      .parse(await req.json());
+    if (body.decision === "rejected" && !body.reason.trim())
+      throw Error("اكتب سبب الرفض");
+    check(
+      await db().rpc("review_payment", {
+        p_payment: id,
+        p_decision: body.decision,
+        p_reason: body.reason,
+        p_reference: body.reference,
+        p_actor: user.id,
+      }),
+    );
+    after(async () => {
+      await processOutbox();
+    });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return failure(e);
+  }
+}

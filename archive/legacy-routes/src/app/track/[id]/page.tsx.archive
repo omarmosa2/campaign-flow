@@ -1,0 +1,136 @@
+import { cookies } from "next/headers";
+import { notFound } from "next/navigation";
+import { db, configured } from "@/lib/supabase";
+import { hash, check } from "@/lib/http";
+import { PublicShell } from "@/components/public-shell";
+import { Badge } from "@/components/common";
+import {
+  CopyButton,
+  PaymentUpload,
+  NewOrderButton,
+} from "@/components/payment-upload";
+import { ShieldCheck, CheckCircle2 } from "lucide-react";
+export const dynamic = "force-dynamic";
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const secret = (await cookies()).get(`order_${id}`)?.value;
+  if (!configured() || !secret || !/^[a-f0-9-]{36}$/.test(id)) notFound();
+  const client = db();
+  const order = check(
+    await client
+      .from("orders")
+      .select(
+        "id,order_number,item_name,amount,currency,status,payment_status,created_at,campaign_id,service_id",
+      )
+      .eq("id", id)
+      .eq("access_hash", hash(secret))
+      .maybeSingle(),
+  );
+  if (!order) notFound();
+  const kind = order.campaign_id ? "campaigns" : "services";
+  const itemId = order.campaign_id ?? order.service_id;
+  const item = check(
+    await client.from(kind).select("slug").eq("id", itemId).maybeSingle(),
+  );
+  const settings = check(
+    await client.from("settings").select("value").eq("id", "main").single(),
+  ).value;
+  const latest = check(
+    await client
+      .from("payments")
+      .select("review_reason,status")
+      .eq("order_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1),
+  );
+  return (
+    <PublicShell>
+      <div className="stack" style={{ maxWidth: 670, margin: "auto" }}>
+        <span className="eyebrow">
+          <ShieldCheck size={16} />
+          متابعة خاصة بطلبك
+        </span>
+        <div className="row between wrap">
+          <h1>{order.order_number}</h1>
+          <Badge value={order.status} />
+        </div>
+        <section className="card stack">
+          <h2>{order.item_name}</h2>
+          <div className="row between">
+            <span className="muted">المبلغ المطلوب</span>
+            <span className="price">
+              {order.amount} <small>{order.currency}</small>
+            </span>
+          </div>
+          <p className="small muted">
+            احتفظ برابط الصفحة في هذا المتصفح. يتطلب الوصول ملف ارتباط آمن صالحاً
+            لمدة 30 يوماً؛ الرابط وحده لا يكشف بيانات الطلب.
+          </p>
+        </section>
+        {["pending_payment", "payment_rejected"].includes(order.status) ? (
+          <>
+            <section className="card stack">
+              <h2>الدفع عبر شام كاش</h2>
+              {order.status === "payment_rejected" && (
+                <div className="alert">
+                  لم يُعتمد الإشعار السابق: {latest[0]?.review_reason}. يرجى
+                  التحقق ورفع إشعار جديد.
+                </div>
+              )}
+              <p>
+                حوّل المبلغ الموضح إلى الحساب التالي، ثم ارفع صورة إشعار التحويل.
+              </p>
+              <div className="card stack" style={{ background: "var(--bg)" }}>
+                <div>
+                  <span className="small muted">اسم صاحب الحساب</span>
+                  <h3>{settings.sham_name}</h3>
+                </div>
+                <div>
+                  <span className="small muted">رقم / معرّف الحساب</span>
+                  <h3 dir="ltr" style={{ textAlign: "right" }}>
+                    {settings.sham_account}
+                  </h3>
+                </div>
+                <CopyButton
+                  text={`${settings.sham_name}\n${settings.sham_account}\n${order.amount} ${order.currency}\n${order.order_number}`}
+                />
+              </div>
+              <p style={{ whiteSpace: "pre-wrap" }} className="small muted">
+                {settings.payment_instructions}
+              </p>
+              <PaymentUpload id={id} />
+            </section>
+          </>
+        ) : (
+          <section className="card stack">
+            <CheckCircle2 size={32} color="var(--primary)" />
+            <h2>
+              {order.status === "payment_review"
+                ? "استلمنا إشعار التحويل"
+                : order.payment_status === "approved"
+                  ? "تم اعتماد الدفع"
+                  : "حالة الطلب"}
+            </h2>
+            <p className="muted">
+              {order.status === "payment_review"
+                ? "طلبك بانتظار مراجعة المدير. إرسال صورة التحويل لا يعني اعتماد الدفع."
+                : order.payment_status === "approved"
+                  ? "تحقق المدير من الدفع. يمكنك متابعة حالة تنفيذ طلبك من هذه الصفحة."
+                  : "هذا الطلب مغلق حالياً. تواصل مع الإدارة عند الحاجة."}
+            </p>
+            <a href={`/track/${id}`} className="btn btn-outline">
+              تحديث حالة الطلب
+            </a>
+          </section>
+        )}
+        {item && (
+          <NewOrderButton kind={kind} itemId={itemId} slug={item.slug} />
+        )}
+      </div>
+    </PublicShell>
+  );
+}

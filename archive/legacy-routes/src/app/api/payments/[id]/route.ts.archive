@@ -1,0 +1,51 @@
+import { after } from "next/server";
+import { processOutbox } from "@/server/notifications";
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { z } from "zod";
+import { db } from "@/lib/supabase";
+import { failure, origin, limit, hash, check } from "@/lib/http";
+import { upload, removeUnreferenced } from "@/server/uploads";
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  let path: string | undefined;
+  try {
+    origin(req);
+    await limit(req, "payments", 10);
+    const id = z.uuid().parse((await params).id);
+    const secret = (await cookies()).get(`order_${id}`)?.value;
+    if (!secret) throw Error("لا تملك صلاحية الوصول إلى الطلب");
+    check(
+      await db()
+        .from("orders")
+        .select("id")
+        .eq("id", id)
+        .eq("access_hash", hash(secret))
+        .single(),
+    );
+    if (Number(req.headers.get("content-length")) > 4400000)
+      throw Error("الصورة أكبر من الحجم المسموح");
+    const f = (await req.formData()).get("file");
+    if (!(f instanceof File)) throw Error("اختر صورة إشعار التحويل");
+    const data = await upload(f, `orders/${id}`, true);
+    path = data.path;
+    check(
+      await db().rpc("submit_payment", {
+        p_order: id,
+        p_hash: hash(secret),
+        p_path: path,
+        p_mime: data.mime,
+        p_size: data.size,
+      }),
+    );
+    after(async () => {
+      await processOutbox();
+    });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    if (path) await removeUnreferenced([path]);
+    return failure(e);
+  }
+}

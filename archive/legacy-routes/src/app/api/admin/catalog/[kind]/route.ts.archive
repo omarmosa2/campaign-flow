@@ -1,0 +1,31 @@
+import { NextResponse } from "next/server";
+import { admin, db } from "@/lib/supabase";
+import { origin, failure, check } from "@/lib/http";
+import { catalogSchema } from "@/lib/domain";
+import { z } from "zod";
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ kind: string }> },
+) {
+  try {
+    origin(req);
+    const user = await admin();
+    const { kind } = await params;
+    if (!["campaigns", "services"].includes(kind)) throw Error("قسم غير صالح");
+    const raw = await req.json();
+    const id = raw.id ? z.uuid().parse(raw.id) : null;
+    const data = catalogSchema.parse(raw);
+    const result = check(
+      await db().rpc("save_catalog", {
+        p_kind: kind,
+        p_id: id,
+        p_data: data,
+        p_services: data.service_ids,
+        p_actor: user.id,
+      }),
+    );
+    return NextResponse.json({ id: result });
+  } catch (e) {
+    return failure(e);
+  }
+}

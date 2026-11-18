@@ -1,0 +1,29 @@
+import { NextResponse } from "next/server";
+import { admin, db } from "@/lib/supabase";
+import { origin, failure, check } from "@/lib/http";
+import { z } from "zod";
+import { statuses } from "@/lib/domain";
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    origin(req);
+    const user = await admin();
+    const id = z.uuid().parse((await params).id);
+    const body = z
+      .object({ status: z.enum(statuses), notes: z.string().max(10000) })
+      .parse(await req.json());
+    check(
+      await db().rpc("update_order", {
+        p_order: id,
+        p_status: body.status,
+        p_notes: body.notes,
+        p_actor: user.id,
+      }),
+    );
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return failure(e);
+  }
+}

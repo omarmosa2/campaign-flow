@@ -1,0 +1,41 @@
+import { pageAdmin } from "@/lib/page-auth";
+import { notFound } from "next/navigation";
+import { db } from "@/lib/supabase";
+import { check } from "@/lib/http";
+import { CatalogList } from "@/components/catalog-list";
+import type { Item } from "@/types";
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ kind: string }>;
+}) {
+  const { kind } = await params;
+  if (!["campaigns", "services"].includes(kind)) notFound();
+  await pageAdmin();
+  const client = db();
+  const [items, stats, links] = await Promise.all([
+    client
+      .from(kind)
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500),
+    client.rpc("catalog_stats", { p_kind: kind }),
+    kind === "campaigns"
+      ? client.from("campaign_services").select("*")
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const catalog = check(items) as Item[];
+  const relations = check(links);
+  return (
+    <CatalogList
+      kind={kind}
+      items={catalog.map((i) => ({
+        ...i,
+        service_ids: relations
+          .filter((r) => r.campaign_id === i.id)
+          .map((r) => r.service_id),
+      }))}
+      stats={check(stats)}
+    />
+  );
+}

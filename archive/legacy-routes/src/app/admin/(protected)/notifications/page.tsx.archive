@@ -1,0 +1,110 @@
+import { pageAdmin } from "@/lib/page-auth";
+import Link from "next/link";
+import { db } from "@/lib/supabase";
+import { check } from "@/lib/http";
+import { whatsappReady } from "@/server/notifications";
+import { Badge, Empty } from "@/components/common";
+import { NotificationAction } from "@/components/notification-actions";
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  await pageAdmin();
+  const page = Math.max(1, Number((await searchParams).page) || 1);
+  const result = await db()
+    .from("notification_outbox")
+    .select("*,orders(order_number)", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range((page - 1) * 20, page * 20 - 1);
+  const rows = check(result);
+  return (
+    <div className="stack">
+      <div className="page-head">
+        <div>
+          <span className="eyebrow">واتساب أعمال</span>
+          <h1>سجل الإشعارات</h1>
+          <p>حالة كل مهمة، والمحاولات التي تحتاج انتباهك.</p>
+        </div>
+        <NotificationAction />
+      </div>
+      {!whatsappReady() && (
+        <div className="alert">
+          تكامل Meta غير جاهز: أضف متغيرات البيئة ثم فعّل الإشعارات من الإعدادات.
+          لم يُدّع إرسال أي رسالة.
+        </div>
+      )}
+      <div className="card">
+        {rows.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  {[
+                    "الطلب",
+                    "الحدث",
+                    "الحالة",
+                    "المحاولات",
+                    "آخر نتيجة",
+                    "إجراء",
+                  ].map((h) => (
+                    <th key={h}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((n) => (
+                  <tr key={n.id}>
+                    <td>
+                      <Link href={`/admin/orders/${n.order_id}`}>
+                        {n.orders?.order_number}
+                      </Link>
+                    </td>
+                    <td>
+                      {{
+                        order_created: "طلب جديد",
+                        payment_submitted: "إشعار دفع",
+                        payment_approved: "دفع معتمد",
+                      }[n.event as string] ?? n.event}
+                    </td>
+                    <td>
+                      <Badge value={n.status} />
+                    </td>
+                    <td>{n.attempts}</td>
+                    <td style={{ whiteSpace: "normal", maxWidth: 280 }}>
+                      {n.last_error ?? n.external_id ?? "—"}
+                    </td>
+                    <td>
+                      {["failed", "disabled", "uncertain"].includes(
+                        n.status,
+                      ) && <NotificationAction id={n.id} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty title="لا توجد مهام إشعار بعد" />
+        )}
+      </div>
+      <div className="row between">
+        <span className="muted small">
+          {result.count ?? 0} مهمة · الصفحة {page}
+        </span>
+        <div className="row">
+          {page > 1 && (
+            <Link className="btn btn-outline btn-sm" href={`?page=${page - 1}`}>
+              السابق
+            </Link>
+          )}
+          {page * 20 < (result.count ?? 0) && (
+            <Link className="btn btn-outline btn-sm" href={`?page=${page + 1}`}>
+              التالي
+            </Link>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

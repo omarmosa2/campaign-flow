@@ -1,0 +1,15 @@
+import { NextResponse } from "next/server";
+import { admin, db } from "@/lib/supabase";
+import { origin, failure, check } from "@/lib/http";
+import { settingsSchema } from "@/lib/settings";
+export async function POST(req: Request) {
+  try {
+    origin(req);
+    const user = await admin(true);
+    const data = settingsSchema.parse(await req.json());
+    check(await db().rpc("save_settings", { p_value: data, p_actor: user.id }));
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return failure(e);
+  }
+}

@@ -1,0 +1,27 @@
+import { redirect } from "next/navigation";
+import { pageAdmin } from "@/lib/page-auth";
+import { db } from "@/lib/supabase";
+import { check } from "@/lib/http";
+import { TeamEditor } from "@/components/team-editor";
+export default async function Page() {
+  const actor = await pageAdmin();
+  if (actor.role !== "super_admin") redirect("/admin/dashboard");
+  const rows = check(
+    await db()
+      .from("profiles")
+      .select("id,display_name,role,enabled")
+      .order("created_at"),
+  );
+  return (
+    <div className="stack">
+      <div className="page-head">
+        <div>
+          <span className="eyebrow">مدير النظام</span>
+          <h1>الفريق والصلاحيات</h1>
+          <p>لا يوجد تسجيل إداري عام. تُنشأ الحسابات من هنا فقط.</p>
+        </div>
+      </div>
+      <TeamEditor profiles={rows} />
+    </div>
+  );
+}

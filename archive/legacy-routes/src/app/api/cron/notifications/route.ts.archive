@@ -1,0 +1,19 @@
+import { NextResponse } from "next/server";
+import { safeEqual, failure } from "@/lib/http";
+import { processOutbox } from "@/server/notifications";
+export const maxDuration = 60;
+export async function GET(req: Request) {
+  try {
+    if (
+      !process.env.CRON_SECRET ||
+      !safeEqual(
+        req.headers.get("authorization") ?? "",
+        `Bearer ${process.env.CRON_SECRET}`,
+      )
+    )
+      return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
+    return NextResponse.json(await processOutbox());
+  } catch (e) {
+    return failure(e);
+  }
+}

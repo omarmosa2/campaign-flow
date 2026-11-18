@@ -1,0 +1,113 @@
+import Image from "next/image";
+import { notFound } from "next/navigation";
+import { db, configured } from "@/lib/supabase";
+import { check } from "@/lib/http";
+import { PublicShell } from "@/components/public-shell";
+import { Setup } from "@/components/common";
+import { CheckoutForm } from "@/components/checkout-form";
+import type { Item } from "@/types";
+import { ShieldCheck, Clock3 } from "lucide-react";
+export const dynamic = "force-dynamic";
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ kind: string; slug: string }>;
+}) {
+  const { kind, slug } = await params;
+  if (!["campaigns", "services"].includes(kind)) notFound();
+  if (!configured())
+    return (
+      <PublicShell>
+        <Setup />
+      </PublicShell>
+    );
+  const client = db();
+  const result = check(
+    await client
+      .from(kind)
+      .select("*")
+      .eq("slug", slug)
+      .eq("status", "active")
+      .maybeSingle(),
+  ) as Item | null;
+  if (
+    !result ||
+    (result.starts_at && new Date(result.starts_at) > new Date()) ||
+    (result.ends_at && new Date(result.ends_at) < new Date())
+  )
+    notFound();
+  const settings = check(
+    await client.from("settings").select("value").eq("id", "main").single(),
+  ).value;
+  let services: {
+    id: string;
+    name: string;
+    price: number;
+    currency: string;
+  }[] = [];
+  if (kind === "campaigns") {
+    const ids = check(
+      await client
+        .from("campaign_services")
+        .select("service_id")
+        .eq("campaign_id", result.id),
+    ).map((x) => x.service_id);
+    if (ids.length)
+      services = check(
+        await client
+          .from("services")
+          .select("id,name,price,currency")
+          .in("id", ids)
+          .eq("status", "active"),
+      );
+  }
+  return (
+    <PublicShell>
+      <div className="checkout" style={{ alignItems: "start" }}>
+        <section className="stack" style={{ position: "sticky", top: 30 }}>
+          {result.image_path && (
+            <Image
+              unoptimized
+              width={640}
+              height={400}
+              src={`/api/assets?path=${encodeURIComponent(result.image_path)}`}
+              alt={result.name}
+              style={{ width: "100%", borderRadius: 15 }}
+            />
+          )}
+          <span className="eyebrow">
+            {kind === "campaigns"
+              ? "عرض يستحق اهتمامك"
+              : "مصممة لتناسب احتياجك"}
+          </span>
+          <h1 style={{ fontSize: 32 }}>{result.name}</h1>
+          <p className="muted">{result.description}</p>
+          <p style={{ whiteSpace: "pre-wrap" }}>{result.details}</p>
+          <span className="price">
+            {result.price} <small className="muted">{result.currency}</small>
+          </span>
+          {result.duration && (
+            <p className="small muted row">
+              <Clock3 size={16} />
+              {result.duration}
+            </p>
+          )}
+          {result.instructions && (
+            <div className="alert">{result.instructions}</div>
+          )}
+          <hr className="divider" />
+          <p className="small muted row">
+            <ShieldCheck size={17} />
+            بياناتك خاصة، والدفع بمراجعة بشرية.
+          </p>
+        </section>
+        <CheckoutForm
+          kind={kind}
+          item={result}
+          services={services}
+          enabled={settings.accepting_orders}
+        />
+      </div>
+    </PublicShell>
+  );
+}

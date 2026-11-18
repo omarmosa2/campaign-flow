@@ -1,0 +1,30 @@
+import { admin, db } from "@/lib/supabase";
+import { failure, check } from "@/lib/http";
+import { csv } from "@/lib/domain";
+export async function GET() {
+  try {
+    await admin();
+    const rows = check(
+      await db()
+        .from("orders")
+        .select(
+          "order_number,customer_name,phone,item_name,amount,currency,status,payment_status,created_at",
+        )
+        .order("created_at", { ascending: false })
+        .limit(5001),
+    );
+    if (rows.length > 5000)
+      throw Error(
+        "التصدير يتجاوز 5000 طلب؛ استخدم تصدير قاعدة البيانات الكامل",
+      );
+    return new Response(csv(rows), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="orders.csv"',
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (e) {
+    return failure(e);
+  }
+}

@@ -1,0 +1,75 @@
+import { NextResponse } from "next/server";
+import { db, admin } from "@/lib/supabase";
+import { failure, hash, check } from "@/lib/http";
+import { cookies } from "next/headers";
+export async function GET(req: Request) {
+  try {
+    const path = new URL(req.url).searchParams.get("path") ?? "";
+    if (!/^(catalog|orders)\/[a-f0-9/.-]+\.(png|jpg|pdf)$/.test(path))
+      throw Error("ملف غير صالح");
+    if (path.startsWith("catalog/")) {
+      const [a, b, s] = await Promise.all([
+        db()
+          .from("campaigns")
+          .select("id")
+          .eq("image_path", path)
+          .eq("status", "active")
+          .limit(1),
+        db()
+          .from("services")
+          .select("id")
+          .eq("image_path", path)
+          .eq("status", "active")
+          .limit(1),
+        db().from("settings").select("value").eq("id", "main").single(),
+      ]);
+      if (
+        !a.data?.length &&
+        !b.data?.length &&
+        s.data?.value?.logo_path !== path
+      )
+        await admin();
+    } else {
+      try {
+        await admin();
+      } catch {
+        const attachment = check(
+          await db()
+            .from("attachments")
+            .select("order_id")
+            .eq("path", path)
+            .single(),
+        );
+        const secret = (await cookies()).get(
+          `order_${attachment.order_id}`,
+        )?.value;
+        if (!secret) throw Error("غير مصرح");
+        check(
+          await db()
+            .from("orders")
+            .select("id")
+            .eq("id", attachment.order_id)
+            .eq("access_hash", hash(secret))
+            .single(),
+        );
+      }
+    }
+    const result = check(
+      await db()
+        .storage.from("private-assets")
+        .createSignedUrl(
+          path,
+          60,
+          path.endsWith(".pdf") ? { download: true } : undefined,
+        ),
+    );
+    return NextResponse.redirect(result.signedUrl, {
+      headers: {
+        "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  } catch (e) {
+    return failure(e);
+  }
+}

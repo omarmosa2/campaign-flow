@@ -1,0 +1,46 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { admin, db } from "@/lib/supabase";
+import { origin, failure, check } from "@/lib/http";
+import { processOutbox, whatsappReady } from "@/server/notifications";
+export const maxDuration = 60;
+export async function POST(req: Request) {
+  try {
+    origin(req);
+    const user = await admin();
+    const b = z
+      .object({
+        action: z.enum(["retry", "process", "test"]),
+        id: z.uuid().optional(),
+        confirmed: z.boolean().optional(),
+      })
+      .parse(await req.json());
+    if (b.action === "test") {
+      await admin(true);
+      if (!whatsappReady()) throw Error("متغيرات Meta غير مكتملة");
+      const r = await fetch(
+        `https://graph.facebook.com/${process.env.WHATSAPP_GRAPH_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}?fields=id,display_phone_number,verified_name`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+          },
+          signal: AbortSignal.timeout(10000),
+        },
+      );
+      if (!r.ok) throw Error(`تعذر التحقق من اتصال Meta (HTTP ${r.status})`);
+      return NextResponse.json({
+        ok: true,
+        message: "تم التحقق من الوصول إلى رقم Meta. لم يُرسل أي إشعار اختباري.",
+      });
+    }
+    if (b.action === "retry") {
+      if (!b.id || !b.confirmed) throw Error("يلزم تأكيد إعادة الإرسال");
+      check(
+        await db().rpc("retry_notification", { p_id: b.id, p_actor: user.id }),
+      );
+    }
+    return NextResponse.json(await processOutbox());
+  } catch (e) {
+    return failure(e);
+  }
+}
