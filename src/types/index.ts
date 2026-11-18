@@ -1,0 +1,3 @@
+import type {Field} from "@/lib/domain";
+export type Item={id:string;name:string;slug:string;description:string;details:string;price:number;currency:string;status:string;image_path:string|null;form_schema:Field[];starts_at:string|null;ends_at:string|null;max_orders:number|null;sort_order:number;duration:string;instructions:string;service_ids?:string[]};
+export type Order={id:string;order_number:string;customer_name:string;phone:string;item_name:string;amount:number;currency:string;status:string;payment_status:string;created_at:string;answers:Record<string,unknown>;form_snapshot:Field[];notes:string;campaign_id:string|null;service_id:string|null};
