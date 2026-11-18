@@ -5,13 +5,8 @@ export default function Page() {
   return (
     <PublicShell>
       <section className="request-hero">
-        <span className="hero-orbit">
-          <Target size={42} />
-        </span>
-        <span className="eyebrow">فكرتك تستحق أن تصل</span>
         <h1>
           ابدأ حملتك الإعلانية
-          <br />
           <em>بسهولة</em>
         </h1>
         <p>

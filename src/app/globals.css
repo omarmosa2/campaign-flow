@@ -744,3 +744,4 @@ select {
 @media(max-width:767px){.request-stats{grid-template-columns:1fr;gap:16px}.request-stat{min-height:180px;padding:24px!important}.requests-desktop{display:none}.requests-mobile{display:grid;gap:16px}.request-hero{padding:35px 0;min-height:68vh;gap:22px}.request-hero p{font-size:15px}.request-hero h1{letter-spacing:-1px}.request-dialog{padding:20px}.request-page{margin:25px auto}.content{padding:22px 16px}.public-header{gap:12px}.brand{font-size:22px}}
 
 .requests-desktop table{min-width:850px;white-space:normal}.requests-desktop th,.requests-desktop td{padding:12px 10px}.requests-desktop td:first-child{min-width:90px}
+.request-fields{border:0;padding:0;margin:0;min-width:0}.request-fields[hidden]{display:none}.receipt-preview{max-width:100%;max-height:320px;object-fit:contain;border-radius:12px;border:1px solid var(--border)}.receipt-name{overflow-wrap:anywhere}

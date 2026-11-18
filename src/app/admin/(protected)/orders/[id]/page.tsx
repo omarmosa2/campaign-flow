@@ -22,6 +22,8 @@ export default async function Page({
   if (!data) notFound();
   const r = data as AdRequest;
   const timezone = check(await client.rpc("request_timezone"));
+  const receipt = check(await client.from("ad_request_receipts")
+    .select("mime,size,payment_status").eq("request_id", id).maybeSingle());
   const legacy =
     r.source === "legacy"
       ? check(
@@ -66,6 +68,14 @@ export default async function Page({
             </div>
           ))}
         </dl>
+        <section className="stack">
+          <h2>إشعار دفع شام كاش</h2>
+          <p>حالة مراجعة الدفع: {receipt ? ({review: "بانتظار المراجعة", approved: "تمت الموافقة", rejected: "مرفوض"}[receipt.payment_status as string] ?? "غير معروفة") : "لا يوجد إشعار في النظام الجديد"}</p>
+          {receipt && <>
+            <p className="muted small">صورة الإشعار · {receipt.mime} · {Math.ceil(receipt.size / 1024)} KB</p>
+            <a className="btn btn-outline" href={`/api/admin/orders/${id}/receipt`} target="_blank" rel="noopener noreferrer">عرض إشعار الدفع</a>
+          </>}
+        </section>
         {legacy && (
           <section>
             <h2>بيانات الطلب التاريخية المحفوظة</h2>

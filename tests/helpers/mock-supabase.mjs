@@ -14,7 +14,14 @@ await pg.exec(
     "",
   ),
 );
-await pg.exec(readFileSync("supabase/migrations/202611180002_simple_requests.sql", "utf8"));
+await pg.exec(
+  readFileSync("supabase/migrations/202611180002_simple_requests.sql", "utf8"),
+);
+await pg.exec(readFileSync("tests/helpers/storage-schema.sql", "utf8"));
+await pg.exec(
+  readFileSync("supabase/migrations/202611180003_request_receipts.sql", "utf8"),
+);
+await pg.query("select activate_request_receipt_requirement()");
 const actor = "10000000-0000-4000-8000-000000000001";
 const user = {
   id: actor,
@@ -76,9 +83,15 @@ const server = createServer(async (req, res) => {
       return send(200, user);
     }
     if (u.pathname === "/auth/v1/logout") return send(200, {});
-    if (u.pathname.startsWith("/storage/v1/object/sign/private-assets/"))
+    if (
+      /^\/storage\/v1\/object\/sign\/(private-assets|request-receipts)\//.test(
+        u.pathname,
+      )
+    )
       return send(200, {
-        signedURL: "/object/local/" + u.pathname.split("/private-assets/")[1],
+        signedURL:
+          "/object/local/" +
+          u.pathname.split(/\/(?:private-assets|request-receipts)\//)[1],
       });
     if (u.pathname.startsWith("/storage/v1/object/local/")) {
       const f = files.get(decodeURIComponent(u.pathname.split("/local/")[1]));
@@ -87,18 +100,72 @@ const server = createServer(async (req, res) => {
       res.end(f.bytes);
       return;
     }
-    if (u.pathname.startsWith("/storage/v1/object/private-assets/")) {
-      const path = decodeURIComponent(u.pathname.split("/private-assets/")[1]);
+    if (
+      u.pathname.startsWith(
+        "/storage/v1/object/authenticated/request-receipts/",
+      )
+    ) {
+      const path = decodeURIComponent(
+        u.pathname.split("/request-receipts/")[1],
+      );
+      const f = files.get(path);
+      if (!f) return send(404, {});
+      res.writeHead(200, { "Content-Type": f.type });
+      res.end(f.bytes);
+      return;
+    }
+    if (
+      /^\/storage\/v1\/object\/(private-assets|request-receipts)\//.test(
+        u.pathname,
+      )
+    ) {
+      const path = decodeURIComponent(
+        u.pathname.split(/\/(?:private-assets|request-receipts)\//)[1],
+      );
+      if (req.method === "GET") {
+        const f = files.get(path);
+        if (!f) return send(404, {});
+        res.writeHead(200, { "Content-Type": f.type });
+        res.end(f.bytes);
+        return;
+      }
       if (req.method === "POST") {
+        if (files.has(path)) return send(409, { message: "already exists" });
         files.set(path, { bytes: raw, type: req.headers["content-type"] });
+        const bucket = u.pathname.includes("/request-receipts/")
+          ? "request-receipts"
+          : "private-assets";
+        const metadata = req.headers["x-metadata"]
+          ? JSON.parse(
+              Buffer.from(req.headers["x-metadata"], "base64").toString(),
+            )
+          : {};
+        await pg.query(
+          "insert into storage.objects(bucket_id,name,metadata,user_metadata) values($1,$2,$3,$4)",
+          [
+            bucket,
+            path,
+            JSON.stringify({
+              size: raw.length,
+              mimetype: req.headers["content-type"],
+            }),
+            JSON.stringify(metadata),
+          ],
+        );
         return send(200, { Key: `private-assets/${path}` });
       }
     }
     if (
-      u.pathname === "/storage/v1/object/private-assets" &&
+      [
+        "/storage/v1/object/private-assets",
+        "/storage/v1/object/request-receipts",
+      ].includes(u.pathname) &&
       req.method === "DELETE"
     ) {
-      (body.prefixes ?? []).forEach((x) => files.delete(x));
+      for (const path of body.prefixes ?? []) {
+        files.delete(path);
+        await pg.query("delete from storage.objects where name=$1", [path]);
+      }
       return send(200, []);
     }
     if (u.pathname.startsWith("/rest/v1/rpc/")) {
