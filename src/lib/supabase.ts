@@ -51,7 +51,11 @@ export async function admin(superOnly = false) {
     .eq("id", user.id)
     .eq("enabled", true)
     .single();
-  if (!profile || (superOnly && profile.role !== "super_admin"))
+  if (
+    !profile ||
+    !["admin", "super_admin"].includes(profile.role) ||
+    (superOnly && profile.role !== "super_admin")
+  )
     throw Error("FORBIDDEN");
   return { id: user.id, ...profile };
 }

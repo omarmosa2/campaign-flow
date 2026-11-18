@@ -14,6 +14,7 @@ export function RequestForm({
   const [number, setNumber] = useState("");
   const busy = useRef(false);
   const key = useRef<string | null>(null);
+  const lastPayload = useRef("");
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy.current) return;
@@ -37,7 +38,11 @@ export function RequestForm({
     busy.current = true;
     setPending(true);
     try {
-      key.current ??= crypto.randomUUID();
+      const payload = JSON.stringify(result.data);
+      if (!key.current || lastPayload.current !== payload) {
+        key.current = crypto.randomUUID();
+        lastPayload.current = payload;
+      }
       const r = await fetch(admin ? "/api/admin/orders" : "/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -69,6 +74,7 @@ export function RequestForm({
       <label htmlFor="placement">
         موقع عرض الإعلان
         <input
+          aria-label="موقع عرض الإعلان"
           id="placement"
           name="ad_placement"
           required
@@ -84,6 +90,7 @@ export function RequestForm({
       <label htmlFor="age">
         الفئة العمرية
         <input
+          aria-label="الفئة العمرية"
           id="age"
           name="age_group"
           type="number"
@@ -102,6 +109,7 @@ export function RequestForm({
       <label htmlFor="interests">
         اهتمامات الجمهور
         <textarea
+          aria-label="اهتمامات الجمهور"
           id="interests"
           name="audience_interests"
           required
@@ -118,6 +126,7 @@ export function RequestForm({
       <label htmlFor="objective">
         الهدف من الحملة الإعلانية
         <select
+          aria-label="الهدف من الحملة الإعلانية"
           id="objective"
           name="campaign_objective"
           required

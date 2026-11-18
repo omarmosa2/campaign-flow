@@ -19,7 +19,7 @@ export async function GET(req: Request) {
           p_search: (params.get("q") ?? "").slice(0, 200),
           p_page: Math.max(
             1,
-            Math.min(1000000, Number(params.get("page")) || 1),
+            Math.min(1000000, Math.trunc(Number(params.get("page"))) || 1),
           ),
         }),
       ),

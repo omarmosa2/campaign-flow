@@ -1,6 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/workflow",
+  testMatch: "simple.spec.ts",
+  projects: [
+    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
+    { name: "mobile", use: { ...devices["Pixel 7"] } },
+  ],
   timeout: 240000,
   workers: 1,
   expect: { timeout: 30000 },

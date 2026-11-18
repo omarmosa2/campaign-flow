@@ -1,8 +1,11 @@
 -- Additive migration. Never modifies historical orders, payments, profiles or storage.
 BEGIN;
+CREATE SEQUENCE public.ad_request_numbers;
+REVOKE ALL ON SEQUENCE public.ad_request_numbers FROM PUBLIC,anon,authenticated;
+GRANT USAGE ON SEQUENCE public.ad_request_numbers TO service_role;
 CREATE TABLE public.ad_requests (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
- order_number text NOT NULL UNIQUE DEFAULT ('REQ-' || gen_random_uuid()::text),
+ order_number text NOT NULL UNIQUE DEFAULT ('REQ-' || nextval('public.ad_request_numbers')::text),
  ad_placement text NOT NULL CHECK(length(btrim(ad_placement)) BETWEEN 1 AND 200),
  age_group integer NOT NULL CHECK(age_group > 0),
  audience_interests text NOT NULL CHECK(length(btrim(audience_interests)) BETWEEN 1 AND 5000),
@@ -28,26 +31,26 @@ GRANT ALL ON public.ad_requests, public.ad_request_keys TO service_role;
 
 CREATE FUNCTION public.submit_ad_request(p_key uuid,p_placement text,p_age integer,p_interests text,p_objective text,p_source text,p_client text,p_actor uuid DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
-DECLARE existing ad_request_keys; result ad_requests; fingerprint text;
+DECLARE existing ad_request_keys; result ad_requests; v_fingerprint text;
 BEGIN
  IF p_source NOT IN ('public','admin') OR p_source IS NULL THEN RAISE EXCEPTION 'مصدر غير صالح'; END IF;
  IF p_source='admin' AND NOT EXISTS(SELECT 1 FROM profiles WHERE id=p_actor AND enabled AND role IN ('admin','super_admin')) THEN RAISE EXCEPTION 'غير مصرح'; END IF;
- fingerprint := md5(jsonb_build_array(btrim(p_placement),p_age,btrim(p_interests),p_objective,p_source,p_actor)::text);
+ v_fingerprint := md5(jsonb_build_array(btrim(p_placement),p_age,btrim(p_interests),p_objective,p_source,p_actor)::text);
  -- Consistent lock order serializes both retries and identical concurrent submissions.
  PERFORM pg_advisory_xact_lock(hashtextextended(p_key::text,0));
- PERFORM pg_advisory_xact_lock(hashtextextended(p_client||fingerprint,1));
+ PERFORM pg_advisory_xact_lock(hashtextextended(p_client||v_fingerprint,1));
  SELECT * INTO existing FROM ad_request_keys WHERE key=p_key;
  IF existing.key IS NOT NULL THEN
-  IF existing.fingerprint<>fingerprint OR existing.client_hash<>p_client THEN RAISE EXCEPTION 'معرّف الطلب مستخدم لبيانات أخرى'; END IF;
+  IF existing.fingerprint<>v_fingerprint OR existing.client_hash<>p_client THEN RAISE EXCEPTION 'معرّف الطلب مستخدم لبيانات أخرى'; END IF;
   SELECT * INTO result FROM ad_requests WHERE id=existing.request_id;
  ELSE
   SELECT r.* INTO result FROM ad_requests r JOIN ad_request_keys k ON k.request_id=r.id
-   WHERE k.client_hash=p_client AND k.fingerprint=fingerprint AND k.created_at>now()-interval '1 minute' ORDER BY k.created_at DESC LIMIT 1;
+   WHERE k.client_hash=p_client AND k.fingerprint=v_fingerprint AND k.created_at>now()-interval '1 minute' ORDER BY k.created_at DESC LIMIT 1;
   IF result.id IS NULL THEN
    INSERT INTO ad_requests(ad_placement,age_group,audience_interests,campaign_objective,source)
     VALUES(btrim(p_placement),p_age,btrim(p_interests),p_objective,p_source) RETURNING * INTO result;
   END IF;
-  INSERT INTO ad_request_keys(key,request_id,fingerprint,client_hash) VALUES(p_key,result.id,fingerprint,p_client);
+  INSERT INTO ad_request_keys(key,request_id,fingerprint,client_hash) VALUES(p_key,result.id,v_fingerprint,p_client);
  END IF;
  RETURN jsonb_build_object('order_number',result.order_number);
 END $$;
