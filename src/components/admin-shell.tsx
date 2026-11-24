@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   LayoutDashboard,
   ShoppingBag,
+  MessageCircle,
   LogOut,
   Menu,
   ArrowUpLeft,
@@ -17,6 +18,7 @@ import { toast } from "sonner";
 const links = [
   { href: "/admin/dashboard", label: "نظرة عامة", icon: LayoutDashboard },
   { href: "/admin/orders", label: "الطلبات", icon: ShoppingBag },
+  { href: "/admin/whatsapp", label: "إشعارات واتساب", icon: MessageCircle },
 ];
 export function AdminShell({
   children,

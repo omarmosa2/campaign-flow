@@ -3,8 +3,20 @@ export default defineConfig({
   testDir: "./tests/workflow",
   testMatch: "simple.spec.ts",
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
-    { name: "mobile", use: { ...devices["Pixel 7"] } },
+    {
+      name: "desktop",
+      use: {
+        ...devices["Desktop Chrome"],
+        extraHTTPHeaders: { "x-forwarded-for": "192.0.2.10" },
+      },
+    },
+    {
+      name: "mobile",
+      use: {
+        ...devices["Pixel 7"],
+        extraHTTPHeaders: { "x-forwarded-for": "192.0.2.11" },
+      },
+    },
   ],
   timeout: 240000,
   workers: 1,

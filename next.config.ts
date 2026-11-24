@@ -5,6 +5,11 @@ const storageOrigin = process.env.NEXT_PUBLIC_SUPABASE_URL
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  outputFileTracingIncludes: {
+    "/api/admin/whatsapp/migration": [
+      "./supabase/migrations/202611240001_ultramsg_notifications.sql",
+    ],
+  },
   experimental: { serverActions: { bodySizeLimit: "4mb" } },
   async headers() {
     return [

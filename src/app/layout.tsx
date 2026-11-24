@@ -15,7 +15,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
-      <body>
+      {/* Extensions such as ColorZilla add body attributes before hydration. */}
+      <body suppressHydrationWarning>
         <a className="skip" href="#main">
           انتقل إلى المحتوى
         </a>

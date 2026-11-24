@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "admin:create": "node --env-file=.env.local scripts/create-admin.mjs",
+    "whatsapp:worker": "node --env-file=.env.local scripts/whatsapp-worker.mjs",
     "test:workflow": "playwright test --config=playwright.workflow.config.ts"
   },
   "dependencies": {

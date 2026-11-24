@@ -4,6 +4,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { admin, db } from "@/lib/supabase";
 import { hash, limit, origin } from "@/lib/http";
 import { submissionSchema } from "@/lib/requests";
+import { processWhatsApp } from "@/server/whatsapp";
+import { defaultRecipients, environmentEnabled } from "@/server/ultramsg";
 import {
   RECEIPT_BODY_MAX_BYTES,
   receiptError,
@@ -140,21 +142,43 @@ export async function submitRequest(req: Request, asAdmin = false) {
   // One database transaction creates the order, private attachment and retry key.
   // Upload first: a failed upload can never produce a final order.
   let result;
+  let whatsappOutboxAvailable = true;
+  let notificationRecipients: string[] = [];
   try {
-    result = await client.rpc("submit_ad_request_with_receipt", {
-      p_key: body.idempotency_key,
-      p_placement: body.ad_placement,
-      p_age: body.age_group,
-      p_interests: body.audience_interests,
-      p_objective: body.campaign_objective,
-      p_source: asAdmin ? "admin" : "public",
-      p_client: hash(actor ? `admin:${actor.id}` : `public:${ip}`),
-      p_actor: actor?.id ?? null,
-      p_path: path,
-      p_mime: file.type,
-      p_size: file.size,
-      p_sha256: digest,
+    notificationRecipients = defaultRecipients();
+  } catch {
+    console.error("whatsapp_recipient_configuration_invalid");
+  }
+  const bookingArgs = {
+    p_key: body.idempotency_key,
+    p_placement: body.ad_placement,
+    p_age: body.age_group,
+    p_interests: body.audience_interests,
+    p_objective: body.campaign_objective,
+    p_source: asAdmin ? "admin" : "public",
+    p_client: hash(actor ? `admin:${actor.id}` : `public:${ip}`),
+    p_actor: actor?.id ?? null,
+    p_path: path,
+    p_mime: file.type,
+    p_size: file.size,
+    p_sha256: digest,
+  };
+  try {
+    result = await client.rpc("submit_ad_request_with_whatsapp", {
+      ...bookingArgs,
+      p_whatsapp_enabled:
+        environmentEnabled() && notificationRecipients.length > 0,
+      p_whatsapp_recipients: notificationRecipients,
     });
+    // PGRST202 guarantees PostgREST never invoked the missing function. Only
+    // allow a pre-migration rollout while notifications are explicitly off.
+    // Transport errors or errors inside SQL must never trigger a second write.
+    if (result.error?.code === "PGRST202" && !environmentEnabled()) {
+      whatsappOutboxAvailable = false;
+      result = await client.rpc("submit_ad_request_with_receipt", bookingArgs);
+      if (!result.error)
+        console.warn("whatsapp_migration_pending_notifications_disabled");
+    }
   } catch {
     console.error("receipt_reconciliation_needed", path);
     throw Error(
@@ -177,5 +201,11 @@ export async function submitRequest(req: Request, asAdmin = false) {
   if (!data?.order_number || !data.receipt_path)
     throw Error("تعذر تأكيد اكتمال حفظ الطلب؛ أعد المحاولة");
   if (data.receipt_path !== path) await cleanup(); // A concurrent retry already saved its receipt.
+  try {
+    // Await inside this request. A scheduled worker recovers the durable outbox if interrupted.
+    if (whatsappOutboxAvailable) await processWhatsApp(data.order_number);
+  } catch {
+    console.error("whatsapp_outbox_processing_failed"); // Never log provider payloads or credentials.
+  }
   return { order_number: data.order_number };
 }

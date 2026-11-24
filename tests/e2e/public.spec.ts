@@ -36,3 +36,49 @@ test("protected orders and removed tracking page", async ({
     ).status(),
   ).toBe(403);
 });
+test("tolerates extension attributes on body while hydrating the request form", async ({
+  page,
+}) => {
+  const hydrationErrors: string[] = [];
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      /hydration|hydrated/i.test(message.text())
+    )
+      hydrationErrors.push(message.text());
+  });
+  await page.addInitScript(() => {
+    const inject = () => {
+      if (!document.body) return false;
+      document.body.setAttribute("cz-shortcut-listen", "true");
+      return true;
+    };
+    if (!inject()) {
+      const observer = new MutationObserver(() => {
+        if (inject()) observer.disconnect();
+      });
+      observer.observe(document, { childList: true, subtree: true });
+    }
+  });
+  await page.goto("/request");
+  await page
+    .getByLabel("موقع عرض الإعلان", { exact: true })
+    .fill("اختبار الإضافة");
+  await page.getByLabel("الفئة العمرية", { exact: true }).fill("25");
+  await page.getByLabel("اهتمامات الجمهور", { exact: true }).fill("تقنية");
+  await page
+    .getByLabel("الهدف من الحملة الإعلانية", { exact: true })
+    .selectOption("مشاهدات");
+  await page.getByRole("button", { name: "التالي", exact: true }).click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "cz-shortcut-listen",
+    "true",
+  );
+  await expect(
+    page.getByRole("heading", {
+      name: "إتمام الطلب — إشعار الدفع",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(hydrationErrors).toEqual([]);
+});

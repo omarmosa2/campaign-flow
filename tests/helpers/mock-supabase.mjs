@@ -22,6 +22,12 @@ await pg.exec(
   readFileSync("supabase/migrations/202611180003_request_receipts.sql", "utf8"),
 );
 await pg.query("select activate_request_receipt_requirement()");
+await pg.exec(
+  readFileSync(
+    "supabase/migrations/202611240001_ultramsg_notifications.sql",
+    "utf8",
+  ),
+);
 const actor = "10000000-0000-4000-8000-000000000001";
 const user = {
   id: actor,
@@ -174,7 +180,9 @@ const server = createServer(async (req, res) => {
       const entries = Object.entries(body);
       const args = entries.map(([k], i) => `${k} => $${i + 1}`).join(",");
       const values = entries.map(([, v]) => v);
-      if (["create_order", "claim_notifications"].includes(name)) {
+      if (
+        ["create_order", "claim_notifications", "claim_ultramsg"].includes(name)
+      ) {
         const { rows } = await pg.query(
           `select * from ${name}(${args})`,
           values,
@@ -322,6 +330,11 @@ const child = spawn(
       APP_URL: "http://127.0.0.1:3001",
       ORDER_TOKEN_SECRET: "a".repeat(64),
       WHATSAPP_ACCESS_TOKEN: "",
+      ULTRAMSG_TOKEN: "",
+      ULTRAMSG_INSTANCE_ID: "instance197517",
+      ULTRAMSG_API_URL: "https://api.ultramsg.com",
+      ADMIN_WHATSAPP_NUMBER: "+963953705031",
+      WHATSAPP_NOTIFICATIONS_ENABLED: "false",
       CRON_SECRET: "local-cron",
     },
   },

@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   upload: vi.fn(),
   download: vi.fn(),
@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   admin: vi.fn(),
   limit: vi.fn(),
   storage: vi.fn(),
+  whatsapp: vi.fn(),
 }));
+vi.mock("@/server/whatsapp", () => ({ processWhatsApp: mocks.whatsapp }));
 vi.mock("@/lib/supabase", () => ({
   db: () => ({ rpc: mocks.rpc, storage: { from: mocks.storage } }),
   admin: mocks.admin,
@@ -47,13 +49,12 @@ function request(
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.whatsapp.mockReset().mockResolvedValue({ processed: 0 });
   mocks.upload.mockResolvedValue({ error: null });
-  mocks.download
-    .mockReset()
-    .mockResolvedValue({
-      data: new Blob([png], { type: "image/png" }),
-      error: null,
-    });
+  mocks.download.mockReset().mockResolvedValue({
+    data: new Blob([png], { type: "image/png" }),
+    error: null,
+  });
   mocks.remove.mockResolvedValue({ error: null });
   mocks.storage.mockReturnValue({
     upload: mocks.upload,
@@ -65,6 +66,46 @@ beforeEach(() => {
     error: null,
   }));
   mocks.admin.mockResolvedValue({ id: "admin" });
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+it("preserves booking before WhatsApp migration when notifications are disabled", async () => {
+  vi.stubEnv("WHATSAPP_NOTIFICATIONS_ENABLED", "false");
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST202" } });
+  expect(await submitRequest(request())).toEqual({ order_number: "REQ-1" });
+  expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  expect(mocks.rpc.mock.calls[0][0]).toBe("submit_ad_request_with_whatsapp");
+  expect(mocks.rpc.mock.calls[1][0]).toBe("submit_ad_request_with_receipt");
+  expect(mocks.rpc.mock.calls[1][1]).not.toHaveProperty("p_whatsapp_enabled");
+  expect(mocks.rpc.mock.calls[1][1].p_path).toBe(
+    mocks.rpc.mock.calls[0][1].p_path,
+  );
+  expect(mocks.whatsapp).not.toHaveBeenCalled();
+  expect(warning).toHaveBeenCalledWith(
+    "whatsapp_migration_pending_notifications_disabled",
+  );
+});
+it("never bypasses the transactional outbox when notifications are enabled", async () => {
+  vi.stubEnv("WHATSAPP_NOTIFICATIONS_ENABLED", "true");
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST202" } });
+  await expect(submitRequest(request())).rejects.toThrow("تعذر تأكيد");
+  expect(mocks.rpc).toHaveBeenCalledOnce();
+  expect(mocks.whatsapp).not.toHaveBeenCalled();
+});
+it("does not fall back on ambiguous transport errors or errors inside the database function", async () => {
+  vi.stubEnv("WHATSAPP_NOTIFICATIONS_ENABLED", "false");
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  for (const code of ["", "42883", "PGRST000"]) {
+    mocks.rpc
+      .mockClear()
+      .mockResolvedValueOnce({ data: null, error: { code } });
+    await expect(submitRequest(request())).rejects.toThrow("تعذر تأكيد");
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+  }
 });
 it("validates client sizes/types and WebP signatures", () => {
   expect(receiptError(null)).toContain("ارفع");
@@ -107,7 +148,7 @@ it("stores privately first, finalizes atomically and returns no storage paths", 
     mocks.rpc.mock.invocationCallOrder[0],
   );
   expect(mocks.rpc).toHaveBeenCalledWith(
-    "submit_ad_request_with_receipt",
+    "submit_ad_request_with_whatsapp",
     expect.objectContaining({
       p_source: "public",
       p_sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -118,6 +159,35 @@ it("never creates an order on upload failure", async () => {
   mocks.upload.mockResolvedValue({ error: { message: "storage down" } });
   await expect(submitRequest(request())).rejects.toThrow("تعذر رفع");
   expect(mocks.rpc).not.toHaveBeenCalled();
+  expect(mocks.whatsapp).not.toHaveBeenCalled();
+});
+it("dispatches only after saved success and never fails a booking for a notification error", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.whatsapp.mockRejectedValueOnce(Error("provider down"));
+  expect(await submitRequest(request())).toEqual({ order_number: "REQ-1" });
+  expect(mocks.whatsapp).toHaveBeenCalledWith("REQ-1");
+  expect(mocks.rpc.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.whatsapp.mock.invocationCallOrder[0],
+  );
+  log.mockRestore();
+  mocks.whatsapp.mockClear();
+  mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: "23514" } });
+  await expect(submitRequest(request())).rejects.toThrow();
+  expect(mocks.whatsapp).not.toHaveBeenCalled();
+});
+it("does not fail a booking for a malformed notification recipient environment", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubEnv("ADMIN_WHATSAPP_NUMBER", "invalid");
+  expect(await submitRequest(request())).toEqual({ order_number: "REQ-1" });
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "submit_ad_request_with_whatsapp",
+    expect.objectContaining({
+      p_whatsapp_enabled: false,
+      p_whatsapp_recipients: [],
+    }),
+  );
+  vi.unstubAllEnvs();
+  log.mockRestore();
 });
 it("cleans up after database rollback and duplicate success", async () => {
   mocks.rpc.mockResolvedValueOnce({ error: { code: "23514" }, data: null });
@@ -156,28 +226,22 @@ it("authenticates administrator before upload and binds the source", async () =>
   expect(mocks.upload).toHaveBeenCalledOnce();
 });
 it("signs only an authorized order's receipt for sixty seconds", async () => {
-  const signing = vi
-    .fn()
-    .mockResolvedValue({
-      data: { signedUrl: "https://storage.example.test/signed" },
-      error: null,
-    });
+  const signing = vi.fn().mockResolvedValue({
+    data: { signedUrl: "https://storage.example.test/signed" },
+    error: null,
+  });
   // Scope the database stub to the receipt route.
   const supabase = await import("@/lib/supabase");
-  const eq = vi
-    .fn()
-    .mockReturnValue({
-      maybeSingle: async () => ({
-        data: { path: "request-receipts/test.png" },
-        error: null,
-      }),
-    });
-  const stub = vi
-    .spyOn(supabase, "db")
-    .mockReturnValue({
-      from: () => ({ select: () => ({ eq }) }),
-      storage: { from: () => ({ createSignedUrl: signing }) },
-    } as unknown as ReturnType<typeof supabase.db>);
+  const eq = vi.fn().mockReturnValue({
+    maybeSingle: async () => ({
+      data: { path: "request-receipts/test.png" },
+      error: null,
+    }),
+  });
+  const stub = vi.spyOn(supabase, "db").mockReturnValue({
+    from: () => ({ select: () => ({ eq }) }),
+    storage: { from: () => ({ createSignedUrl: signing }) },
+  } as unknown as ReturnType<typeof supabase.db>);
   const id = crypto.randomUUID();
   const response = await GET(new Request("http://localhost"), {
     params: Promise.resolve({ id }),

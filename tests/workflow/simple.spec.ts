@@ -112,6 +112,7 @@ test("public submission, admin session, counts, search, pagination and retired r
   expect((await request.get("/api/orders")).status()).toBe(405);
   expect((await request.get("/api/admin/orders")).status()).toBe(401);
   expect((await request.get("/api/admin/stats")).status()).toBe(401);
+  expect((await request.get("/api/admin/whatsapp")).status()).toBe(401);
   for (const patch of [
     { ad_placement: "" },
     { age_group: 2.5 },
@@ -140,6 +141,93 @@ test("public submission, admin session, counts, search, pagination and retired r
     .fill("Strong-password-123!");
   await page.getByRole("button", { name: "تسجيل الدخول", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/dashboard$/);
+  await page.route("**/api/admin/whatsapp", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "لم يكتمل إعداد قاعدة بيانات واتساب",
+        setup_required: true,
+      }),
+    }),
+  );
+  await page.goto("/admin/whatsapp");
+  await expect(
+    page.getByRole("heading", {
+      name: "إكمال إعداد قاعدة بيانات واتساب",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("جارٍ تحميل الإعدادات…", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "نسخ SQL", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (sql: string) => {
+          (window as Window & { copiedMigration?: string }).copiedMigration =
+            sql;
+        },
+      },
+    });
+  });
+  await page.getByRole("button", { name: "نسخ SQL", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(/تم نسخ SQL/);
+  expect(
+    await page.evaluate(
+      () => (window as Window & { copiedMigration?: string }).copiedMigration,
+    ),
+  ).toContain("CREATE TABLE public.whatsapp_notifications");
+  const migration = await page.request.get("/api/admin/whatsapp/migration");
+  expect(migration.status()).toBe(200);
+  expect(await migration.text()).toContain(
+    "CREATE TABLE public.whatsapp_notifications",
+  );
+  expect((await request.get("/api/admin/whatsapp/migration")).status()).toBe(
+    401,
+  );
+  await page.unroute("**/api/admin/whatsapp");
+  await page.goto("/admin/whatsapp");
+  await expect(
+    page.getByRole("heading", { name: "إشعارات واتساب", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("غير مهيأة", { exact: true })).toBeVisible();
+  const recipientInput = page.getByLabel("أرقام المستلمين", { exact: false });
+  await expect(recipientInput).toHaveValue("+963953705031");
+  await recipientInput.fill("+963953705031\n+14155552671");
+  await page.getByLabel("تفعيل إشعارات واتساب", { exact: true }).uncheck();
+  await page
+    .getByRole("button", { name: "حفظ الإعدادات", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toHaveText("تم حفظ إعدادات الإشعارات");
+  await page.reload();
+  await expect(recipientInput).toHaveValue("+963953705031\n+14155552671");
+  await expect(
+    page.getByLabel("تفعيل إشعارات واتساب", { exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "إرسال رسالة تجريبية", exact: true }),
+  ).toBeDisabled();
+  await recipientInput.fill("+963953705031");
+  await page.getByLabel("تفعيل إشعارات واتساب", { exact: true }).check();
+  await page
+    .getByRole("button", { name: "حفظ الإعدادات", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toHaveText("تم حفظ إعدادات الإشعارات");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: test.info().outputPath("whatsapp.png"),
+    fullPage: true,
+  });
+  await page.goto("/admin/dashboard");
   await expect(page.locator(".request-stat")).toHaveCount(2);
   let stats = await (await page.request.get("/api/admin/stats")).json();
   const baseline = stats.total;
