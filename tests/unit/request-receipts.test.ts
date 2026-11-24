@@ -189,6 +189,23 @@ it("does not fail a booking for a malformed notification recipient environment",
   vi.unstubAllEnvs();
   log.mockRestore();
 });
+it("awaits the notification attempt inside the booking request before returning success", async () => {
+  let finish!: () => void;
+  mocks.whatsapp.mockReturnValue(
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  let returned = false;
+  const result = submitRequest(request()).then((value) => {
+    returned = true;
+    return value;
+  });
+  await vi.waitFor(() => expect(mocks.whatsapp).toHaveBeenCalledOnce());
+  expect(returned).toBe(false);
+  finish();
+  expect(await result).toEqual({ order_number: "REQ-1" });
+});
 it("cleans up after database rollback and duplicate success", async () => {
   mocks.rpc.mockResolvedValueOnce({ error: { code: "23514" }, data: null });
   await expect(submitRequest(request())).rejects.toThrow("تعذر تأكيد");

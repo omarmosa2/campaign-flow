@@ -12,6 +12,9 @@
     "test:e2e": "playwright test",
     "admin:create": "node --env-file=.env.local scripts/create-admin.mjs",
     "whatsapp:worker": "node --env-file=.env.local scripts/whatsapp-worker.mjs",
+    "whatsapp:cron:setup": "node --env-file=.env.vercel.local scripts/configure-whatsapp-cron.mjs",
+    "whatsapp:cron:status": "node --env-file=.env.vercel.local scripts/configure-whatsapp-cron.mjs --status",
+    "whatsapp:cron:disable": "node --env-file=.env.vercel.local scripts/configure-whatsapp-cron.mjs --disable",
     "test:workflow": "playwright test --config=playwright.workflow.config.ts"
   },
   "dependencies": {

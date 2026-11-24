@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/admin/whatsapp/migration": [
       "./supabase/migrations/202611240001_ultramsg_notifications.sql",
+      "./supabase/migrations/202611240002_whatsapp_supabase_cron.sql",
     ],
   },
   experimental: { serverActions: { bodySizeLimit: "4mb" } },

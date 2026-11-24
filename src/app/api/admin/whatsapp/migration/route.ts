@@ -7,7 +7,10 @@ export async function GET(req: Request) {
   try {
     const actor = await admin();
     await limit(req, `whatsapp-migration:${actor.id}`, 10);
-    const filename = "202611240001_ultramsg_notifications.sql";
+    const filename =
+      new URL(req.url).searchParams.get("kind") === "cron"
+        ? "202611240002_whatsapp_supabase_cron.sql"
+        : "202611240001_ultramsg_notifications.sql";
     let sql: string;
     try {
       sql = await readFile(

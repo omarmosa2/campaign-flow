@@ -86,6 +86,16 @@ it("returns the setup prerequisite for missing write RPCs without attempting dis
   });
   expect(mocks.process).not.toHaveBeenCalled();
 });
+it("downloads the optional Supabase Cron migration only from the fixed allowlist", async () => {
+  const response = await migration(
+    new Request("https://example.test/api/admin/whatsapp/migration?kind=cron"),
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-disposition")).toContain(
+    "202611240002_whatsapp_supabase_cron.sql",
+  );
+  expect(await response.text()).toContain("public.configure_whatsapp_cron");
+});
 it("denies unauthenticated reads and mutations before dispatch", async () => {
   mocks.admin.mockRejectedValue(Error("UNAUTHORIZED"));
   expect((await GET(new Request("https://example.test"))).status).toBe(401);

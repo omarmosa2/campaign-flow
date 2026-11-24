@@ -118,9 +118,11 @@ npm run whatsapp:worker -- --once
 2. أضف متغيرات البيئة الخاصة بالسيرفر و`CRON_SECRET`، واضبط `APP_URL` على عنوان الإنتاج العام عبر HTTPS.
 3. تأكد من اتصال حساب واتساب في UltraMsg ومسح QR إذا لزم.
 4. انشر إصدار التطبيق، وافتح إعدادات واتساب للمدير ثم أرسل اختباراً إلى الأرقام المحفوظة.
-5. فعّل تشغيل `GET /api/cron/whatsapp` كل دقيقة. يلزم رأس `Authorization: Bearer CRON_SECRET`. لا تضع السر في عنوان URL.
+5. لإعادة المحاولة الآلية، طبّق الترحيل الاختياري `202611240002_whatsapp_supabase_cron.sql` ثم شغّل `npm run whatsapp:cron:setup` وفق [دليل النشر](DEPLOYMENT.md). يلزم رأس `Authorization: Bearer CRON_SECRET`. لا تضع السر في عنوان URL.
 
-يتضمن `vercel.json` جدولة كل دقيقة. هذه الجدولة تتطلب خطة Vercel تدعم التشغيل كل دقيقة؛ Hobby يقيّد تكرار Cron اليومي. إن كنت على Hobby، احذف بند `crons` من `vercel.json` قبل النشر، واستخدم مجدول HTTP خارجياً يرسل رأس التفويض كل دقيقة إلى المسار نفسه. لا يلزم تغيير الكود أو توصيل المفتاح الخاص بالمزود إلى المجدول. على خادم مُدار يمكن تشغيل `scripts/whatsapp-worker.mjs` كخدمة مراقبة مع إعادة تشغيل تلقائية. [قيود Vercel](https://vercel.com/i/event-driven-architecture)، [تفويض Cron](https://vercel.com/kb/guide/ship-an-express-app-on-vercel).
+أزيلت جدولة واتساب بالكامل من `vercel.json` وأزيل ملف GitHub المجدول الذي أُضيف أثناء التحضير. الإرسال الفوري ينتظر UltraMsg وتسجيل النتيجة داخل طلب الحجز نفسه. الإعادة الآلية اختيارية عبر Supabase Cron كل دقيقة إذا توفرت `pg_cron` و`pg_net` وVault؛ وإلا يبقى الإرسال المباشر والإعادة اليدوية عاملين. يحفظ برنامج الإعداد أصل الإنتاج وسر العامل في Vault، ويحدّث مهمة واحدة باسم `campaign-flow-whatsapp-retry` دون المساس بأي مهمة أخرى. لا يُخزّن مفتاح UltraMsg في قاعدة البيانات أو نص المهمة. [توثيق Supabase Cron](https://supabase.com/docs/guides/cron)، [الاستدعاء الموثّق مع Vault](https://supabase.com/docs/guides/functions/schedule-functions).
+
+يُجري `npm run whatsapp:cron:status` فحص توفر الإضافات والحالة دون إرجاع أسرار. عند الفحص الحالي لم يكن الترحيل الاختياري الجديد مطبقاً على القاعدة، ولذلك لم يُفترض أن Supabase Cron متاح أو مفعّل فعلياً. الترحيل الأساسي والإرسال المباشر سبق التحقق منهما. بعد نشر إعدادات الإنتاج وتطبيق الترحيل الاختياري، ينفذ برنامج الإعداد فحص HTTP للعامل قبل إنشاء الجدولة.
 
 الإرسال الفوري يعمل من طلب الحجز؛ استمرار المحاولات وتحديث حالات التسليم يتطلبان مجدولاً فعّالاً. عند تراكم المهام يعالج كل تشغيل خمساً منها، ويمكن للمجدول استدعاء المسار بوتيرة أعلى عند الحاجة؛ الأقفال تمنع المعالجة المزدوجة. تعرض الواجهة أحدث 100 إشعار، بينما تشمل الإحصاءات جميع السجلات.
 
@@ -129,6 +131,7 @@ npm run whatsapp:worker -- --once
 أنشئت الملفات التالية:
 
 - `supabase/migrations/202611240001_ultramsg_notifications.sql`
+- `supabase/migrations/202611240002_whatsapp_supabase_cron.sql`
 - `src/lib/whatsapp.ts`
 - `src/server/ultramsg.ts`
 - `src/server/whatsapp.ts`
@@ -138,6 +141,9 @@ npm run whatsapp:worker -- --once
 - `src/app/admin/(protected)/whatsapp/page.tsx`
 - `src/components/whatsapp-panel.tsx`
 - `scripts/whatsapp-worker.mjs`
+- `scripts/configure-whatsapp-cron.mjs`
+- `tests/integration/whatsapp-cron.test.ts`
+- `tests/unit/whatsapp-worker-cli.test.ts`
 - `tests/integration/whatsapp.test.ts`
 - `tests/unit/ultramsg.test.ts`
 - `tests/unit/whatsapp-routes.test.ts`
@@ -150,8 +156,9 @@ npm run whatsapp:worker -- --once
 
 | الفحص                                      | النتيجة                                                                                                       |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `npm test`                                 | نجح: 116 اختباراً في 12 ملفاً                                                                                   |
+| `npm test`                                 | نجح: 138 اختباراً في 15 ملفاً                                                                                   |
 | اختبار ترحيل واتساب بعد آخر تعديل SQL      | نجح: 12 اختبار معاملات وصلاحيات                                                                               |
+| اختبار Supabase Cron الاختياري             | نجحت 8 اختبارات للتوفر، والتفويض، وVault، وعدم تكرار المهمة، وحماية المهام الأخرى                               |
 | `npm run typecheck`                        | نجح؛ ويُجري بناء الإنتاج فحص TypeScript أيضاً                                                                   |
 | `npm run lint`                             | نجح دون أخطاء؛ تحذير سابق واحد عن استيراد `Target` غير المستخدم في `src/app/page.tsx`                         |
 | `npm run build`                            | نجح مع توليد مسارات الإدارة وAPI الجديدة                                                                      |

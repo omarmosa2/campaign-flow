@@ -4,8 +4,17 @@ const secret = process.env.CRON_SECRET;
 let url;
 try {
   url = new URL("/api/cron/whatsapp", process.env.APP_URL);
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (
+    url.username ||
+    url.password ||
+    !(url.protocol === "https:" || (local && url.protocol === "http:"))
+  )
+    throw Error("Unsafe worker URL");
 } catch {
-  console.error("Set APP_URL before starting the WhatsApp worker.");
+  console.error(
+    "Set APP_URL to your HTTPS production origin or a local development URL.",
+  );
   process.exit(1);
 }
 if (!secret || secret.length < 32) {
